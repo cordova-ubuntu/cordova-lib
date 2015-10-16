@@ -58,6 +58,17 @@ ubuntu_parser.prototype.update_from_config = function(config) {
     this.config.setPackageName(config.packageName());
     this.config.setDescription(config.description());
 
+    var ret = this.config.doc.find('icon');
+
+    if (config.doc.find('icon') && config.doc.find('icon').attrib.src) {
+	/* override the default icon with the project specific one */
+        if (!ret) {
+	    ret = new et.Element('icon');
+            this.config.doc.getroot().append(ret);
+	}
+	ret.attrib.src = config.doc.find('icon').attrib.src;
+    }
+
     this.config.write();
 
     return this.update_manifest();

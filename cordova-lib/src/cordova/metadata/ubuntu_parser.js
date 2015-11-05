@@ -113,7 +113,6 @@ ubuntu_parser.prototype.update_manifest = function() {
             return Q.reject(new Error('icon does not exist: ' + iconPath));
     } else {
         content += '\nIcon=qmlscene';
-        console.warn('missing icon element in config.xml');
     }
     fs.writeFileSync(path.join(this.path, 'manifest.json'), JSON.stringify(manifest));
     fs.writeFileSync(path.join(this.path, 'cordova.desktop'), content);

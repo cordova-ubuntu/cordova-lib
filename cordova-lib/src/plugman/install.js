@@ -18,7 +18,6 @@
 */
 
 /* jshint laxcomma:true, sub:true, expr:true */
-
 var path = require('path'),
     fs   = require('fs'),
     action_stack = require('./util/action-stack'),

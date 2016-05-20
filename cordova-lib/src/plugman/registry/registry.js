@@ -166,26 +166,12 @@ module.exports = {
      */
     fetch: function(plugin, client) {
         plugin = plugin.shift();
-        return initSettings()
-        .then(function (settings) {
-            return Q.nfcall(npm.load)
-            // configure npm here instead of passing parameters to npm.load due to CB-7670
-            .then(function () {
-                for (var prop in settings){
-                    npm.config.set(prop, settings[prop]);
-                }
-            });
+        return Q.fcall(function() {
+            //fetch from npm
+            return fetchPlugin(plugin);
         })
-        .then(function() {
-            return Q.ninvoke(npm.commands, 'cache', ['add', plugin]);
-        })
-        .then(function(info) {
-            var cl = (client === 'plugman' ? 'plugman' : 'cordova-cli');
-            bumpCounter(info, cl);
-            var pluginDir = path.resolve(npm.cache, info.name, info.version, 'package');
-            // Unpack the plugin that was added to the cache (CB-8154)
-            var package_tgz = path.resolve(npm.cache, info.name, info.version, 'package.tgz');
-            return unpack.unpackTgz(package_tgz, pluginDir);
+        .fail(function(error) {
+            return Q.reject(error);
         });
     },
 
@@ -322,3 +308,77 @@ function makeRequest (method, where, what, cb_) {
 
     return req;
 }
+
+var     cachedSettings = null,
+    cachedSettingsValues = null;
+
+function initThenLoadSettingsWithRestore(promises) {
+    return loadWithSettingsThenRestore({}, promises);
+}
+
+/**
+* @param {Array} with one element - the plugin id or "id@version"
+* @return {Promise.<string>} Promised path to fetched package.
+*/
+function fetchPlugin(plugin) {
+    return initThenLoadSettingsWithRestore(function () {
+        events.emit('log', 'Fetching plugin "' + plugin + '" via npm');
+        return Q.ninvoke(npm.commands, 'cache', ['add', plugin])
+        .then(function (info) {
+            var unpack = require('../../util/unpack');
+            var pluginDir = path.resolve(npm.cache, info.name, info.version, 'package');
+            // Unpack the plugin that was added to the cache (CB-8154)
+            var package_tgz = path.resolve(npm.cache, info.name, info.version, 'package.tgz');
+            return unpack.unpackTgz(package_tgz, pluginDir);
+        });
+    });
+}
+
+/**
+ * @description Calls npm.load, then initializes npm.config with the specified settings. Then executes a chain of
+ * promises that rely on those npm settings, then restores npm settings back to their previous value. Use this rather
+ * than passing settings to npm.load, since that only works the first time you try to load npm.
+ * @param {Object} settings
+ * @param {Function} promiseChain
+ */
+function loadWithSettingsThenRestore(settings, promiseChain) {
+    return loadWithSettings(settings).then(promiseChain).finally(restoreSettings);
+}
+
+function loadWithSettings(settings) {
+    if (cachedSettings) {
+        throw new Error('Trying to initialize npm when settings have not been restored from a previous initialization.');
+    }
+
+    return Q.nfcall(npm.load, settings).then(function () {
+        for (var prop in settings) {
+            var currentValue = npm.config.get(prop);
+            var newValue = settings[prop];
+
+            if (currentValue !== newValue) {
+                cachedSettingsValues = cachedSettingsValues || {};
+                cachedSettings = cachedSettings || [];
+                cachedSettings.push(prop);
+                if (typeof currentValue !== 'undefined') {
+                    cachedSettingsValues[prop] = currentValue;
+                }
+                npm.config.set(prop, newValue);
+            }
+        }
+    });
+}
+
+function restoreSettings() {
+    if (cachedSettings) {
+        cachedSettings.forEach(function (prop) {
+            if (prop in cachedSettingsValues) {
+                npm.config.set(prop, cachedSettingsValues[prop]);
+            } else {
+                npm.config.del(prop);
+            }
+        });
+        cachedSettings = null;
+        cachedSettingsValues = null;
+    }
+}
+
